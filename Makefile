@@ -5,31 +5,31 @@
 # =============================================================================
 SHELL := /bin/sh
 .DEFAULT_GOAL := help
-.PHONY: help init certs validate check up down status logs pull
-
+.PHONY: help init pull certs validate check up down status logs verify sync-api-password
 help:
 	@printf '%s\n' \
 	  'JFStack Wazuh 4.14.7 single-node' '' \
-	  '  make init      Create .env and fetch exact v4.14.7 upstream configs' \
-	  '  make certs     Generate Wazuh self-signed certificates' \
-	  '  make validate  Validate Compose/config presence' \
-	  '  make check     Validate TLS and host prerequisites' \
-	  '  make pull      Pull pinned container images' \
-	  '  make up        Check then start' \
-	  '  make down      Stop; preserve volumes' \
-	  '  make status    Show status' \
-	  '  make logs      Follow logs'
-
+	  '  make init               Create .env and fetch v4.14.7 configs' \
+	  '  make pull               Pull pinned container images' \
+	  '  make certs              Generate Wazuh self-signed certificates' \
+	  '  make validate           Validate Compose/config presence' \
+	  '  make check              Validate TLS and host prerequisites' \
+	  '  make up                 Check then start the stack' \
+	  '  make down               Stop; preserve volumes' \
+	  '  make status             Show status' \
+	  '  make logs               Follow logs' \
+	  '  make verify             Smoke-check recent runtime errors' \
+	  '  make sync-api-password  Copy .env WAZUH_API_PASSWORD into wazuh.yml'
 init:
 	@./scripts/init.sh
+pull:
+	@docker compose -f compose.yaml pull
 certs:
 	@./scripts/generate-certs.sh
 validate:
 	@./scripts/check.sh --compose-only
 check:
 	@./scripts/check.sh
-pull:
-	@docker compose -f compose.yaml pull
 up:
 	@./scripts/check.sh
 	@docker compose -f compose.yaml up -d
@@ -39,3 +39,7 @@ status:
 	@docker compose -f compose.yaml ps
 logs:
 	@docker compose -f compose.yaml logs -f --tail=200
+verify:
+	@./scripts/verify.sh
+sync-api-password:
+	@./scripts/sync-dashboard-api-password.sh

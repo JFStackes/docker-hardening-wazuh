@@ -1,121 +1,157 @@
 # JFStack — Wazuh 4.14.7 Docker Compose
 
-Hardened single-node Wazuh deployment based on the official Wazuh Docker
-**v4.14.7** release. Wazuh publishes v4.14.7 as a release and its official
-single-node Compose uses `wazuh-manager`, `wazuh-indexer` and
-`wazuh-dashboard` 4.14.7.
+Hardened single-node Wazuh deployment pinned to **4.14.7**.
 
-## Design
+## What is hardened
 
-The base Compose keeps the indexer private, does not publish the Wazuh API
-55000 to the host, publishes the Dashboard only on `127.0.0.1` by default,
-uses separate manager/indexer networks, read-only certificate/config bind
-mounts and bounded JSON logs.
+- Indexer `9200` is not published to the host.
+- Manager API `55000` is not published to the host.
+- Dashboard binds to `127.0.0.1:443` by default.
+- Manager and Indexer use separate Docker networks.
+- TLS/config bind mounts are read-only where compatible.
+- `.env`, generated PKI, logs and backups stay outside Git.
+- `json-file` logging is bounded.
+- No Docker socket, host networking or `privileged`.
 
-No blanket `read_only`, UID/GID override, capability drop or
-`no-new-privileges` is forced because this repository has not runtime-tested
-those restrictions against every Wazuh 4.14.7 container path.
+No arbitrary UID/GID, blanket `read_only`, capability drop or resource limits
+are forced without image-specific runtime validation.
 
 ## First deployment
 
-Requirements: Docker Engine with Compose v2, `curl`, Internet access for the
-first configuration fetch/image pull, and `vm.max_map_count >= 262144`.
-
 ```bash
-sudo sysctl -w vm.max_map_count=262144
+echo 'vm.max_map_count=262144' | sudo tee /etc/sysctl.d/99-wazuh.conf
+sudo sysctl --system
+
 make init
 make pull
 make certs
 make check
 make up
+sleep 60
 make status
+make verify
 ```
 
-`make init` never overwrites `.env`. It fetches the five application
-configuration files from the immutable upstream tag `v4.14.7` only when they
-are missing. This avoids silently tracking `main`.
+`make init` creates `.env` only when missing and sets it to `0600`. It fetches
+the exact upstream `v4.14.7` configuration files only when missing.
 
-`make certs` uses the official `wazuh/wazuh-certs-generator:0.0.4` image with
-`CERT_TOOL_VERSION=4.14`, matching Wazuh's documented 4.14 certificate flow.
+The fetched YAML/CONF files are set to `0644` deliberately. During real
+validation, host-owned `0600` files caused `Permission denied` inside the
+non-root Indexer/Dashboard processes. This is a documented compatibility
+exception; the project does not hard-code undocumented container UID/GID
+values.
 
-## Bootstrap credentials — mandatory rotation
+## Passwords
 
-The v4.14.7 upstream `internal_users.yml` and dashboard configuration contain
-known bootstrap credentials. `.env.example` deliberately matches those values
-so the official configuration can boot consistently.
+`.env.example` contains Wazuh's known bootstrap credentials so a clean
+installation matches the upstream hashes/settings.
 
-**Do not expose the Dashboard through Traefik or the Internet with bootstrap
-credentials.** The base configuration binds it to `127.0.0.1`.
+Do **not** expose Dashboard externally with those bootstrap credentials.
 
-After the first successful startup, rotate the `admin`, `kibanaserver` and
-Wazuh API credentials using Wazuh's official Docker password-change procedure,
-then update `.env` and the corresponding Wazuh configuration/keystores as
-documented by Wazuh. Changing `.env` alone does not change the password hashes
-inside the indexer.
+After the first successful startup, rotate:
 
-## Ports
+- Indexer `admin`;
+- Indexer `kibanaserver`;
+- Wazuh API `wazuh-wui`.
 
-- `1514/TCP`: agent communication.
-- `1515/TCP`: agent enrollment.
-- `514/UDP`: optional syslog listener retained from upstream.
-- Dashboard `5601` is mapped to host `${WAZUH_DASHBOARD_PORT:-443}` on
-  `127.0.0.1` by default.
-- Indexer `9200` and manager API `55000` are not host-published.
+See [`docs/PASSWORDS.md`](docs/PASSWORDS.md).
 
-Restrict the bind IPs/firewall for 1514, 1515 and 514 to the networks that
-actually require them.
+The real local `.env` then contains your operational passwords and remains
+ignored by Git.
+
+Changing `.env` alone does not rotate Wazuh credentials.
+
+For `wazuh-wui`, after changing the manager RBAC password and local `.env`:
+
+```bash
+make sync-api-password
+docker compose up -d --force-recreate wazuh.dashboard
+make verify
+```
+
+This synchronizes `config/wazuh_dashboard/wazuh.yml` and keeps `run_as: true`.
+
+For `admin` and `kibanaserver`, follow the full Wazuh Docker password-change
+procedure described in `docs/PASSWORDS.md`.
 
 ## TLS
 
-The generated PKI lives under `config/wazuh_indexer_ssl_certs/` and is ignored
-by Git. Generation is non-destructive: a complete PKI is kept; a partial PKI
-causes `make certs` to stop instead of mixing certificate sets.
+```bash
+make certs
+```
+
+Uses:
+
+```text
+wazuh/wazuh-certs-generator:0.0.4
+CERT_TOOL_VERSION=4.14
+```
+
+Generated material lives under `config/wazuh_indexer_ssl_certs/` and is
+ignored by Git. A complete PKI is preserved; a partial PKI makes generation
+stop instead of mixing certificate sets.
+
+## Ports
+
+Published by default:
+
+- TCP `1514`: agent communication;
+- TCP `1515`: enrollment;
+- UDP `514`: syslog;
+- `127.0.0.1:443` → Dashboard `5601`.
+
+Not host-published:
+
+- Indexer `9200`;
+- manager API `55000`.
+
+Restrict 1514/1515/514 with bind IPs and host/network firewall rules.
 
 ## Traefik
 
-`examples/compose.traefik.override.yml` shows an optional external Traefik
-network. The Dashboard block is enabled; the indexer block is commented
-because putting the indexer on a shared proxy network increases lateral
+`examples/compose.traefik.override.yml` contains an optional external Traefik
+network example.
+
+Dashboard exposure is enabled in the example. Indexer exposure is commented
+out because attaching the Indexer to a shared proxy network increases lateral
 reachability.
 
-The Traefik network is external and must be created/managed outside this
-project. TLS verification between Traefik and the HTTPS backend also needs to
-be configured in Traefik; this project does not disable backend verification
-automatically.
-
-Example validation:
-
-```bash
-docker compose -f compose.yaml \
-  -f examples/compose.traefik.override.yml config
-```
+The external Traefik network must already exist.
 
 ## Agent
 
-`agent/` is a standalone Docker deployment using
-`wazuh/wazuh-agent:4.14.7`. It uses the Wazuh 4.x manager/enrollment model
-(1514/1515), not the 5.x unified HTTPS endpoint.
+`agent/` contains an independent Wazuh Agent 4.14.7 deployment.
 
-## Validation levels
+Wazuh 4.x uses TCP `1514` for agent communication and TCP `1515` for
+enrollment.
 
-`make validate` checks Compose expansion and required vendored configuration.
-`make check` additionally checks TLS files and `vm.max_map_count`.
-`make up` performs those checks and starts containers.
+This project does not force any agent group such as `Debian`. If an endpoint
+requests a group, that group must exist in the manager or the endpoint
+configuration must be corrected.
 
-These are not proof of runtime functionality or security. After startup,
-inspect `make status`, `make logs`, Dashboard access, indexer health and a real
-agent enrollment.
+## Validation
 
-## Persistence and destructive operations
+```bash
+make validate
+make check
+make up
+make status
+make verify
+```
 
-`make down` does not remove named volumes. No automatic destructive
-`down -v`, backup, restore or upgrade target is provided. Define and test a
-Wazuh-aware backup/restore procedure before relying on this deployment for
-important data.
+`make verify` looks for recent authentication and permission failures. It is a
+smoke check, not a security certification.
+
+## Persistence
+
+`make down` preserves named volumes.
+
+No automatic destructive `down -v`, backup, restore or upgrade target is
+provided.
 
 ## Git safety
 
-Never commit `.env`, generated TLS material, backups or logs:
+Before every commit:
 
 ```bash
 git status --short
@@ -124,8 +160,4 @@ git ls-files | grep -E '(^|/)\.env$|\.key$|config/wazuh_indexer_ssl_certs/.*\.pe
 
 ## Upstream
 
-Configuration source is pinned to:
-`https://github.com/wazuh/wazuh-docker/tree/v4.14.7/single-node`
-
-Wazuh remains subject to its upstream licenses and notices. JFStack changes
-are deployment/hardening glue around the upstream project.
+Configuration source is pinned to the immutable Wazuh Docker tag `v4.14.7`.

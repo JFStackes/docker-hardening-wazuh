@@ -1,15 +1,12 @@
 # Security
 
-Do not report real passwords, private keys, enrollment credentials or other
-secrets in public issues.
+Never publish real `.env` files, private keys, enrollment credentials,
+backups or sensitive logs.
 
-The initial Wazuh v4.14.7 bootstrap credentials are known upstream defaults
-and must be rotated before external exposure. The Dashboard is therefore
-loopback-bound by default.
+The bootstrap credentials in `.env.example` are public defaults and must be
+rotated before external exposure. Dashboard is loopback-bound by default.
 
-Do not expose indexer 9200 or manager API 55000 unless there is a documented
-requirement and compensating access control.
+Keep `.env` mode `0600`. Restrict 1514/1515/514 to the networks that need
+them. Keep Indexer 9200 and API 55000 internal unless explicitly required.
 
-Generated certificates and `.env` files are excluded from Git. If a real
-secret was committed or published, treat it as exposed and rotate it; adding
-it to `.gitignore` does not remove repository history.
+If a real credential is committed, treat it as exposed and rotate it.

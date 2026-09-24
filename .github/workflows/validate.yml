@@ -15,10 +15,19 @@ jobs:
           sh -n scripts/fetch-upstream-config.sh
           sh -n scripts/generate-certs.sh
           sh -n scripts/check.sh
-      - name: Compose YAML parse
+          sh -n scripts/sync-dashboard-api-password.sh
+          sh -n scripts/verify.sh
+      - name: YAML parse
         run: |
           python - <<'PY'
           import yaml
-          for f in ("compose.yaml","generate-indexer-certs.yml","agent/compose.yaml","config/certs.yml"):
-              with open(f) as h: yaml.safe_load(h)
+          for f in (
+              "compose.yaml",
+              "generate-indexer-certs.yml",
+              "agent/compose.yaml",
+              "config/certs.yml",
+              "examples/compose.traefik.override.yml",
+          ):
+              with open(f) as h:
+                  yaml.safe_load(h)
           PY
