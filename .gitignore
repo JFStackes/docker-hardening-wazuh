@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+config/wazuh_indexer_ssl_certs/*
+!config/wazuh_indexer_ssl_certs/.gitkeep
+agent/.env
+agent/.env.*
+!agent/.env.example
+backups/
+logs/
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

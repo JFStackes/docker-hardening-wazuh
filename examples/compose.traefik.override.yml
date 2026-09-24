@@ -1,0 +1,33 @@
+# Optional example. The external Traefik network must already exist.
+# Dashboard-only is the recommended exposure. Connecting indexer to this
+# shared network increases lateral reachability from other Traefik-network
+# containers; enable that block only when you explicitly need it.
+services:
+  wazuh.dashboard:
+    networks:
+      - traefik
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
+      - "traefik.http.routers.wazuh-dashboard.rule=Host(`${WAZUH_DASHBOARD_HOST}`)"
+      - "traefik.http.routers.wazuh-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.wazuh-dashboard.tls=true"
+      - "traefik.http.services.wazuh-dashboard.loadbalancer.server.port=5601"
+      - "traefik.http.services.wazuh-dashboard.loadbalancer.server.scheme=https"
+
+  # wazuh.indexer:
+  #   networks:
+  #     - traefik
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.docker.network=${TRAEFIK_NETWORK:-traefik}"
+  #     - "traefik.http.routers.wazuh-indexer.rule=Host(`${WAZUH_INDEXER_HOST}`)"
+  #     - "traefik.http.routers.wazuh-indexer.entrypoints=websecure"
+  #     - "traefik.http.routers.wazuh-indexer.tls=true"
+  #     - "traefik.http.services.wazuh-indexer.loadbalancer.server.port=9200"
+  #     - "traefik.http.services.wazuh-indexer.loadbalancer.server.scheme=https"
+
+networks:
+  traefik:
+    external: true
+    name: "${TRAEFIK_NETWORK:-traefik}"

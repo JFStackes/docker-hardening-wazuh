@@ -1,0 +1,24 @@
+name: validate
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax
+        run: |
+          sh -n scripts/init.sh
+          sh -n scripts/fetch-upstream-config.sh
+          sh -n scripts/generate-certs.sh
+          sh -n scripts/check.sh
+      - name: Compose YAML parse
+        run: |
+          python - <<'PY'
+          import yaml
+          for f in ("compose.yaml","generate-indexer-certs.yml","agent/compose.yaml","config/certs.yml"):
+              with open(f) as h: yaml.safe_load(h)
+          PY

@@ -1,0 +1,17 @@
+services:
+  wazuh.agent:
+    image: wazuh/wazuh-agent:4.14.7
+    hostname: "${WAZUH_AGENT_HOSTNAME:?Set WAZUH_AGENT_HOSTNAME}"
+    restart: unless-stopped
+    environment:
+      WAZUH_MANAGER_SERVER: "${WAZUH_MANAGER_SERVER:?Set WAZUH_MANAGER_SERVER}"
+      WAZUH_REGISTRATION_SERVER: "${WAZUH_REGISTRATION_SERVER:?Set WAZUH_REGISTRATION_SERVER}"
+      WAZUH_AGENT_NAME: "${WAZUH_AGENT_NAME:?Set WAZUH_AGENT_NAME}"
+      WAZUH_REGISTRATION_PASSWORD: "${WAZUH_REGISTRATION_PASSWORD:-}"
+    volumes:
+      - wazuh_agent_etc:/var/ossec/etc
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "5"}
+volumes:
+  wazuh_agent_etc:
