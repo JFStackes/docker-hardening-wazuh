@@ -21,6 +21,6 @@ required="root-ca.pem root-ca-manager.pem wazuh.manager.pem wazuh.manager-key.pe
 bad=0
 for f in $required; do [ -f "$dir/$f" ] || { echo "MISSING: $dir/$f"; bad=1; }; done
 [ "$bad" -eq 0 ] || { echo "ERROR: TLS files missing; run make certs" >&2; exit 1; }
-vm=$(sysctl -n vm.max_map_count 2>/dev/null || echo 0)
+vm=$(cat /proc/sys/vm/max_map_count 2>/dev/null || echo 0)
 [ "$vm" -ge 262144 ] || { echo "ERROR: vm.max_map_count=$vm; Wazuh requires at least 262144" >&2; exit 1; }
 echo "OK: static prerequisites. Runtime/functionality still require real startup checks."
