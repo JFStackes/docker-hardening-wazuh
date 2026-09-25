@@ -1,18 +1,34 @@
+# =============================================================================
+# JFStack
+# Web: https://jfstack.es
+# GitHub: https://github.com/JFStackes
+# =============================================================================
+
 SHELL := /bin/sh
 .DEFAULT_GOAL := help
-.PHONY: help init validate up down status logs
+
+.PHONY: help init install check status logs
+
 help:
-	@printf '%s\n' 'Wazuh Agent 4.14.7' '  make init | validate | up | down | status | logs'
+	@printf '%s\n' \
+	  'JFStack Wazuh Agent 4.14.7 - Debian/Ubuntu' '' \
+	  '  make init       Create local .env; do not overwrite existing config' \
+	  '  sudo make install  Install/enroll agent using hostname as agent name' \
+	  '  make check      Show package/service/enrollment status' \
+	  '  make status     Show systemd status' \
+	  '  make logs       Follow Wazuh agent log'
+
 init:
-	@[ -f .env ] || { cp .env.example .env; chmod 600 .env; echo "Created agent/.env"; }
-validate:
-	@docker compose -f compose.yaml config --quiet
-up:
-	@docker compose -f compose.yaml config --quiet
-	@docker compose -f compose.yaml up -d
-down:
-	@docker compose -f compose.yaml down
+	@./scripts/init.sh
+
+install:
+	@./scripts/install.sh
+
+check:
+	@./scripts/check.sh
+
 status:
-	@docker compose -f compose.yaml ps
+	@systemctl status wazuh-agent --no-pager
+
 logs:
-	@docker compose -f compose.yaml logs -f --tail=100
+	@tail -F /var/ossec/logs/ossec.log
