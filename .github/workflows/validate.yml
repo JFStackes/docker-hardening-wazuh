@@ -14,6 +14,7 @@ jobs:
           sh -n scripts/init.sh
           sh -n scripts/fetch-upstream-config.sh
           sh -n scripts/generate-certs.sh
+          sh -n scripts/fix-cert-permissions.sh
           sh -n scripts/check.sh
           sh -n scripts/sync-dashboard-api-password.sh
           sh -n scripts/verify.sh

@@ -1,49 +1,70 @@
-# Password rotation — Wazuh 4.14.7
+# Rotación de contraseñas — Wazuh 4.14.7
 
-The runtime `.env` contains local operational passwords. It is mode `0600`,
-ignored by Git, and must not be published.
+El `.env` real contiene las contraseñas operativas y debe permanecer local,
+con modo `0600` y fuera de Git.
 
-Changing `.env` alone does **not** rotate Wazuh credentials.
+Cambiar únicamente `.env` **no rota** las credenciales internas de Wazuh.
 
-## `admin`
+Referencia oficial:
+https://documentation.wazuh.com/current/deployment-options/docker/changing-default-password.html
 
-Used by the manager/Filebeat to communicate with the Indexer and as an Indexer
-administrator account.
+## `admin` — Manager/Filebeat → Indexer
 
-A correct rotation requires the complete Wazuh Docker procedure:
+1. Cierra la sesión del Dashboard.
+2. Define la nueva contraseña en `.env`.
+3. Genera el hash usando la imagen 4.14.7:
 
-1. choose the new value;
-2. generate a new password hash with the Indexer `hash.sh`;
-3. replace `admin.hash` in `config/wazuh_indexer/internal_users.yml`;
-4. apply the security configuration with `securityadmin.sh`;
-5. update the manager/Filebeat credential;
-6. restart affected services and verify logs.
+```bash
+docker run --rm -it \
+  wazuh/wazuh-indexer:4.14.7 \
+  bash /usr/share/wazuh-indexer/plugins/opensearch-security/tools/hash.sh
+```
 
-## `kibanaserver`
+4. Sustituye solo `admin.hash` en
+   `config/wazuh_indexer/internal_users.yml`.
+5. Aplica la configuración de seguridad del Indexer siguiendo el procedimiento
+   oficial y valida que el usuario devuelve HTTP 200.
+6. Recrea el manager y revisa que no aparecen `401 Unauthorized`.
 
-Used by Dashboard to communicate with the Indexer.
+El usuario `admin` lo utiliza Filebeat/manager para hablar con el Indexer.
 
-A correct rotation requires:
+## `kibanaserver` — Dashboard → Indexer
 
-1. update the password/hash in `internal_users.yml`;
-2. apply the Indexer security configuration;
-3. update `WAZUH_DASHBOARD_INDEXER_PASSWORD` in `.env`;
-4. update the Dashboard OpenSearch keystore;
-5. recreate/restart Dashboard.
+1. Genera el nuevo hash con el mismo comando `hash.sh`.
+2. Sustituye solo `kibanaserver.hash` en
+   `config/wazuh_indexer/internal_users.yml`.
+3. Aplica la configuración de seguridad del Indexer.
+4. Actualiza `WAZUH_DASHBOARD_INDEXER_PASSWORD` en `.env`.
+5. Actualiza el keystore del Dashboard:
 
-## `wazuh-wui`
+```bash
+KIBANA_PASS="$(sed -n 's/^WAZUH_DASHBOARD_INDEXER_PASSWORD=//p' .env)"
 
-Used by Dashboard to communicate with the Wazuh API.
+printf '%s' "$KIBANA_PASS" | \
+docker compose exec -T wazuh.dashboard \
+  /usr/share/wazuh-dashboard/bin/opensearch-dashboards-keystore \
+  --allow-root add -f --stdin opensearch.password
+```
 
-Wazuh 4.14.7 exposes the local interactive RBAC tool:
+6. Recrea Dashboard y verifica que deja de devolver `ResponseError`/401.
+
+## `wazuh-wui` — Dashboard → Wazuh API
+
+En Wazuh 4.14.7 el mecanismo que se validó en ejecución es interactivo:
 
 ```bash
 docker compose exec wazuh.manager \
   /var/ossec/bin/rbac_control change-password
 ```
 
-Press Enter to skip users you do not want to change. When changing
-`wazuh-wui`, put the same password in local `.env`, then run:
+Pulsa Enter para omitir `wazuh` y establece en `wazuh-wui` exactamente la
+contraseña que guardarás en:
+
+```text
+WAZUH_API_PASSWORD
+```
+
+Después:
 
 ```bash
 make sync-api-password
@@ -51,18 +72,42 @@ docker compose up -d --force-recreate wazuh.dashboard
 make verify
 ```
 
-`make sync-api-password` updates the mounted `wazuh.yml` without printing the
-secret and restores `run_as: true`.
+`make sync-api-password` actualiza `config/wazuh_dashboard/wazuh.yml` sin
+imprimir la contraseña y conserva `run_as: true`.
 
-Wazuh API passwords must be 8–64 characters and contain uppercase, lowercase,
-a number and a symbol.
+## Comprobaciones sin mostrar secretos
 
-## Git safety
+Comparar el password de `.env` y el recibido por el manager:
+
+```bash
+printf '%s' "$(sed -n 's/^WAZUH_INDEXER_ADMIN_PASSWORD=//p' .env)" | sha256sum
+docker compose exec -T wazuh.manager sh -c \
+  'printf "%s" "$INDEXER_PASSWORD" | sha256sum'
+```
+
+Comprobar autenticación de `wazuh-wui`:
+
+```bash
+WUI_PASS="$(sed -n 's/^WAZUH_API_PASSWORD=//p' .env)"
+
+docker compose exec -T -e WUI_PASS="$WUI_PASS" wazuh.manager bash -lc '
+  R=$(curl -sk -u "wazuh-wui:$WUI_PASS" \
+    -X POST "https://localhost:55000/security/user/authenticate?raw=true")
+  case "$R" in
+    *Unauthorized*) echo "ERROR: authentication failed"; exit 1 ;;
+    *) echo "OK: wazuh-wui authentication works" ;;
+  esac
+'
+```
+
+## Git
+
+Antes de cada commit:
 
 ```bash
 git status --short
 git ls-files | grep -E '(^|/)\.env$|\.key$|config/wazuh_indexer_ssl_certs/.*\.pem$' || true
 ```
 
-If a real credential was published, rotate it. `.gitignore` cannot remove it
-from Git history.
+Si una credencial real ha sido publicada, hay que rotarla. `.gitignore` no la
+elimina del historial.

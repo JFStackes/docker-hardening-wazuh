@@ -74,6 +74,41 @@ This synchronizes `config/wazuh_dashboard/wazuh.yml` and keeps `run_as: true`.
 For `admin` and `kibanaserver`, follow the full Wazuh Docker password-change
 procedure described in `docs/PASSWORDS.md`.
 
+
+## Permisos TLS validados
+
+El generador de certificados de Wazuh puede dejar los ficheros del bind mount
+con ownership/permisos que impiden el arranque de los procesos no-root.
+
+En Wazuh 4.14.7 se ha verificado:
+
+```text
+wazuh-indexer   UID/GID 1000:1000
+wazuh-dashboard UID/GID 1000:1000
+```
+
+El `Dockerfile` oficial 4.14.7 del manager no establece `USER`, por lo que el
+contenedor arranca como root.
+
+Por ello `make certs` ejecuta automáticamente
+`scripts/fix-cert-permissions.sh`:
+
+- certificados públicos usados por Indexer/Dashboard: `0444`;
+- claves privadas usadas por Indexer/Dashboard: `0400`, ownership `1000:1000`;
+- certificados públicos del manager: `0444`;
+- clave privada del manager: `0400`;
+- claves privadas de las CA: `0400` y no se montan en los servicios runtime.
+
+Para reparar un despliegue ya generado sin regenerar la PKI:
+
+```bash
+make fix-permissions
+docker compose up -d --force-recreate
+```
+
+No uses `chmod -R 644` sobre el directorio de certificados: expondría las
+claves privadas a lectura global.
+
 ## TLS
 
 ```bash
